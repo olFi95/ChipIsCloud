@@ -1105,6 +1105,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "emballoc"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5f1cdcc6ee777565b5b04209526974a213a8f97879bdb314572265db86e3c63f"
+dependencies = [
+ "spin",
+]
+
+[[package]]
 name = "embassy-embedded-hal"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1349,6 +1358,7 @@ dependencies = [
  "critical-section",
  "defmt 0.3.100",
  "defmt-rtt",
+ "emballoc",
  "embassy-executor",
  "embassy-futures",
  "embassy-net",
@@ -3418,6 +3428,12 @@ dependencies = [
  "libc",
  "windows-sys 0.52.0",
 ]
+
+[[package]]
+name = "spin"
+version = "0.9.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
 
 [[package]]
 name = "ssmarshal"

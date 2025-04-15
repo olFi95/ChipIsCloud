@@ -1,25 +1,32 @@
 #![no_std]
 #![no_main]
+extern crate alloc;
 
+use alloc::vec::Vec as alloc_vec;
 use defmt::*;
+use emballoc::Allocator;
 use embassy_executor::Spawner;
 use embassy_net::tcp::TcpSocket;
-use embassy_net::{Ipv4Address, StackResources};
+use embassy_net::{Ipv4Address, Ipv4Cidr, StackResources};
 use embassy_stm32::eth::generic_smi::GenericSMI;
 use embassy_stm32::eth::{Ethernet, PacketQueue};
 use embassy_stm32::peripherals::ETH;
 use embassy_stm32::rcc::{
-    AHBPrescaler, APBPrescaler, Hse, HseMode, Pll, PllDiv, PllMul, PllPreDiv, PllSource, Sysclk, VoltageScale,
+    AHBPrescaler, APBPrescaler, Hse, HseMode, Pll, PllDiv, PllMul, PllPreDiv, PllSource, Sysclk,
+    VoltageScale,
 };
 use embassy_stm32::rng::Rng;
 use embassy_stm32::time::Hertz;
 use embassy_stm32::{bind_interrupts, eth, peripherals, rng, Config};
-use embassy_time::Timer;
 use embedded_io_async::Write;
+use heapless::Vec;
+use log::{error, info};
 use rand_core::RngCore;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
-use log::{info, error};
+
+#[global_allocator]
+static ALLOCATOR: Allocator<4096> = Allocator::new();
 
 bind_interrupts!(struct Irqs {
     ETH => eth::InterruptHandler;
@@ -32,7 +39,6 @@ type Device = Ethernet<'static, ETH, GenericSMI>;
 async fn net_task(mut runner: embassy_net::Runner<'static, Device>) -> ! {
     runner.run().await
 }
-
 #[embassy_executor::main]
 async fn main(spawner: Spawner) -> ! {
     let mut config = Config::default();
@@ -85,16 +91,17 @@ async fn main(spawner: Spawner) -> ! {
         mac_addr,
     );
 
-    let config = embassy_net::Config::dhcpv4(Default::default());
-    //let config = embassy_net::Config::ipv4_static(embassy_net::StaticConfigV4 {
-    //    address: Ipv4Cidr::new(Ipv4Address::new(10, 42, 0, 61), 24),
-    //    dns_servers: Vec::new(),
-    //    gateway: Some(Ipv4Address::new(10, 42, 0, 1)),
-    //});
+    // let config = embassy_net::Config::dhcpv4(Default::default());
+    let config = embassy_net::Config::ipv4_static(embassy_net::StaticConfigV4 {
+        address: Ipv4Cidr::new(Ipv4Address::new(192, 168, 177, 222), 24),
+        dns_servers: Vec::new(),
+        gateway: Some(Ipv4Address::new(192, 168, 177, 1)),
+    });
 
     // Init network stack
     static RESOURCES: StaticCell<StackResources<3>> = StaticCell::new();
-    let (stack, runner) = embassy_net::new(device, config, RESOURCES.init(StackResources::new()), seed);
+    let (stack, runner) =
+        embassy_net::new(device, config, RESOURCES.init(StackResources::new()), seed);
 
     // Launch network task
     unwrap!(spawner.spawn(net_task(runner)));
@@ -110,31 +117,43 @@ async fn main(spawner: Spawner) -> ! {
 
     loop {
         let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
+        socket.accept(80).await.unwrap();
+        let mut buffer: [u8; 1024] = [0; 1024];
+        // info!("serversocket: {}:{}", socket.local_endpoint().unwrap().addr, socket.local_endpoint().unwrap().port);
 
-        socket.set_timeout(Some(embassy_time::Duration::from_secs(10)));
-
-        let remote_endpoint = (Ipv4Address::new(192, 168, 177, 2), 80);
-        info!("connecting...");
-        let r = socket.connect(remote_endpoint).await;
-        if let Err(e) = r {
-            info!("connect error: {:?}", e);
-            Timer::after_secs(3).await;
-            continue;
-        }
-        info!("connected!");
-        loop {
-            let r = socket.write_all(b"Hello\n").await;
-            if let Err(e) = r {
-                info!("write error: {:?}", e);
-                break;
-            }
-            Timer::after_secs(1).await;
-        }
-    }
+        let bytes = socket.read(&mut buffer).await.unwrap();
+        let received_data = core::str::from_utf8(&buffer[..bytes]).unwrap_or("<invalid UTF-8>");
+        println!("Received {} bytes: {}", bytes, received_data);
+        socket
+            .write_all(serve_frontend_asset("index.html"))
+            .await
+            .unwrap();
+    } //     socket.set_timeout(Some(embassy_time::Duration::from_secs(10)));
 }
 
 #[cortex_m_rt::exception]
 unsafe fn HardFault(ef: &cortex_m_rt::ExceptionFrame) -> ! {
     error!("HardFault at {:#?}", ef);
     loop {}
+}
+
+fn serve_frontend_asset(path: &str) -> &'static [u8] {
+    match path {
+        "index.html" => {
+            println!("index.html");
+            include_bytes!(r"..\..\target\www\index.html")
+        }
+        "web_bg.wasm" => {
+            println!("web_bg.wasm");
+            include_bytes!(r"..\..\target\www\web_bg.wasm")
+        }
+        "web.js" => {
+            println!("web.js");
+            include_bytes!(r"..\..\target\www\web.js")
+        }
+        _ => {
+            println!("ELSE");
+            include_bytes!(r"..\..\target\www\index.html")
+        }
+    }
 }
