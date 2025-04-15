@@ -1,0 +1,15 @@
+<!doctype html>
+<html>
+<head>
+    <script type="module">
+        import init, * as bindings from '/web.js';
+        const wasm = await init({ module_or_path: '/web_bg.wasm' });
+        window.wasmBindings = bindings;
+        dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
+    </script>
+    <link data-trunk rel="rust" data-wasm-opt="z" />
+    <link rel="modulepreload" href="/web.js" crossorigin="anonymous">
+    <link rel="preload" href="/web_bg.wasm" crossorigin="anonymous" as="fetch" type="application/wasm">
+</head>
+<body></body>
+</html>
