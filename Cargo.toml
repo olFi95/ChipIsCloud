@@ -1,4 +1,4 @@
 
 [workspace]
 resolver = "2"
-members = [ "backend","web"]
+members = [ "backend", "embedded","web"]
