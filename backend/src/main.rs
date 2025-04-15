@@ -6,12 +6,12 @@ use actix_web::middleware::Logger;
 use log::info;
 
 #[derive(RustEmbed)]
-#[folder = "../target/wasm-bindgen/debug"]
+#[folder = "../target/www"]
 struct FrontendAssets;
 
 
 async fn index() -> HttpResponse {
-    HttpResponse::Ok().content_type("text/html").body(include_str!("../../web/index.html"))
+    serve_frontend_asset("index.html".to_string())
 }
 
 async fn catch_all(req: HttpRequest) -> impl Responder {

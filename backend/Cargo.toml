@@ -10,6 +10,5 @@ rust-embed = "8.7.0"
 tokio = { version = "1.43.0", features = ["macros", "rt-multi-thread"] }
 actix-cors = "0.7.0"
 mime_guess = "2.0.5"
-web = { path = "../web" }
 env_logger = "0.11.6"
 log = "0.4.27"
