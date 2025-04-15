@@ -1,8 +1,9 @@
 #![no_std]
 #![no_main]
+#![feature(impl_trait_in_assoc_type)]
 extern crate alloc;
 
-use alloc::vec::Vec as alloc_vec;
+use alloc::boxed::Box;
 use defmt::*;
 use emballoc::Allocator;
 use embassy_executor::Spawner;
@@ -18,12 +19,17 @@ use embassy_stm32::rcc::{
 use embassy_stm32::rng::Rng;
 use embassy_stm32::time::Hertz;
 use embassy_stm32::{bind_interrupts, eth, peripherals, rng, Config};
-use embedded_io_async::Write;
+use embassy_time::Duration;
+use embedded_io_async::{Read, Write};
 use heapless::Vec;
 use log::{error, info};
+use picoserve::routing::get;
+use picoserve::{make_static, AppBuilder, AppRouter};
 use rand_core::RngCore;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
+
+const WEB_TASK_POOL_SIZE: usize = 1;
 
 #[global_allocator]
 static ALLOCATOR: Allocator<4096> = Allocator::new();
@@ -40,7 +46,7 @@ async fn net_task(mut runner: embassy_net::Runner<'static, Device>) -> ! {
     runner.run().await
 }
 #[embassy_executor::main]
-async fn main(spawner: Spawner) -> ! {
+async fn main(spawner: Spawner) {
     let mut config = Config::default();
     config.rcc.hsi = None;
     config.rcc.hsi48 = Some(Default::default()); // needed for RNG
@@ -104,37 +110,69 @@ async fn main(spawner: Spawner) -> ! {
         embassy_net::new(device, config, RESOURCES.init(StackResources::new()), seed);
 
     // Launch network task
-    unwrap!(spawner.spawn(net_task(runner)));
+    spawner.must_spawn(net_task(runner));
 
     // Ensure DHCP configuration is up before trying connect
     stack.wait_config_up().await;
 
-    info!("Network task initialized");
+    println!("Network task initialized");
 
-    // Then we can use it!
-    let mut rx_buffer = [0; 1024];
-    let mut tx_buffer = [0; 1024];
+    let app = make_static!(AppRouter<AppProps>, AppProps.build_app());
 
-    loop {
-        let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
-        socket.accept(80).await.unwrap();
-        let mut buffer: [u8; 1024] = [0; 1024];
-        // info!("serversocket: {}:{}", socket.local_endpoint().unwrap().addr, socket.local_endpoint().unwrap().port);
+    let config = make_static!(
+        picoserve::Config<Duration>,
+        picoserve::Config::new(picoserve::Timeouts {
+            start_read_request: Some(Duration::from_secs(5)),
+            read_request: Some(Duration::from_secs(1)),
+            write: Some(Duration::from_secs(1)),
+        })
+        .keep_connection_alive()
+    );
 
-        let bytes = socket.read(&mut buffer).await.unwrap();
-        let received_data = core::str::from_utf8(&buffer[..bytes]).unwrap_or("<invalid UTF-8>");
-        println!("Received {} bytes: {}", bytes, received_data);
-        socket
-            .write_all(serve_frontend_asset("index.html"))
-            .await
-            .unwrap();
-    } //     socket.set_timeout(Some(embassy_time::Duration::from_secs(10)));
+    for id in 0..WEB_TASK_POOL_SIZE {
+        println!("spawned web task {}", id);
+        spawner.must_spawn(web_task(id, stack, app, config));
+    }
 }
-
 #[cortex_m_rt::exception]
 unsafe fn HardFault(ef: &cortex_m_rt::ExceptionFrame) -> ! {
     error!("HardFault at {:#?}", ef);
     loop {}
+}
+
+struct AppProps;
+
+impl AppBuilder for AppProps {
+    // type PathRouter = ();
+    type PathRouter = impl picoserve::routing::PathRouter;
+
+    fn build_app(self) -> picoserve::Router<Self::PathRouter> {
+        picoserve::Router::new().route("/", get(|| async move { "Hello World" }))
+    }
+}
+#[embassy_executor::task(pool_size = WEB_TASK_POOL_SIZE)]
+async fn web_task(
+    id: usize,
+    stack: embassy_net::Stack<'static>,
+    app: &'static AppRouter<AppProps>,
+    config: &'static picoserve::Config<Duration>,
+) -> ! {
+    let port = 80;
+    let mut tcp_rx_buffer = [0; 1024];
+    let mut tcp_tx_buffer = [0; 1024];
+    let mut http_buffer = [0; 2048];
+    println!("web_task {} started", id);
+    picoserve::listen_and_serve(
+        id,
+        app,
+        config,
+        stack,
+        port,
+        &mut tcp_rx_buffer,
+        &mut tcp_tx_buffer,
+        &mut http_buffer,
+    )
+    .await
 }
 
 fn serve_frontend_asset(path: &str) -> &'static [u8] {
