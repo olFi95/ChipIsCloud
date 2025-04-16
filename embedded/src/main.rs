@@ -147,22 +147,26 @@ impl AppBuilder for AppProps {
         picoserve::Router::new()
             .route(
                 "/",
-                get_service(picoserve::response::File::html(include_str!(
-                    "../../target/www/index.html"
-                ))),
+                get_service(picoserve::response::File::with_content_type_and_headers(
+                    "text/html",
+                    include_bytes!("../../target/www/index.html.gz"),
+                    &[("Content-Encoding", "gzip")],
+                )),
             )
             .route(
                 "/web.js",
-                get_service(picoserve::response::File::with_content_type(
+                get_service(picoserve::response::File::with_content_type_and_headers(
                     "text/javascript",
-                    include_bytes!("../../target/www/web.js"),
+                    include_bytes!("../../target/www/web.js.gz"),
+                    &[("Content-Encoding", "gzip")],
                 )),
             )
             .route(
                 "/web_bg.wasm",
-                get_service(picoserve::response::File::with_content_type(
+                get_service(picoserve::response::File::with_content_type_and_headers(
                     "application/wasm",
-                    include_bytes!("../../target/www/web_bg.wasm"),
+                    include_bytes!("../../target/www/web_bg.wasm.gz"),
+                    &[("Content-Encoding", "gzip")],
                 )),
             )
     }
