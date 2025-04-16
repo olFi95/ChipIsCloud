@@ -5,8 +5,3 @@ edition = "2024"
 
 [dependencies]
 leptos = { version = "0.7.7", features = ["csr"] }
-log = "0.4.27"
-console_log = "1.0"
-
-[build-dependencies]
-wasm-bindgen-cli = "0.2.100"

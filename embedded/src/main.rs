@@ -18,14 +18,10 @@ use embassy_stm32::rng::Rng;
 use embassy_stm32::time::Hertz;
 use embassy_stm32::{bind_interrupts, eth, peripherals, rng, Config};
 use embassy_time::Duration;
-use embedded_io_async::Read;
 use heapless::Vec;
 use log::{error, info};
-use picoserve::extract::State;
-use picoserve::request::Request;
-use picoserve::response::{File, Response, ResponseWriter, StatusCode};
-use picoserve::routing::{get, get_service, RequestHandlerFunction};
-use picoserve::{make_static, AppBuilder, AppRouter, ResponseSent};
+use picoserve::routing::get_service;
+use picoserve::{make_static, AppBuilder, AppRouter};
 use rand_core::RngCore;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
@@ -148,22 +144,27 @@ impl AppBuilder for AppProps {
     type PathRouter = impl picoserve::routing::PathRouter;
 
     fn build_app(self) -> picoserve::Router<Self::PathRouter> {
-        picoserve::Router::new().route(
-            "/",
-            get_service(picoserve::response::File::html(include_str!(
-                "../../target/www/index.html"
-            ))),
-        ).route(
-            "/web.js",
-            get_service(picoserve::response::File::with_content_type("text/javascript",include_bytes!(
-                "../../target/www/web.js"
-            ))),
-        ).route(
-            "/web_bg.wasm",
-            get_service(picoserve::response::File::with_content_type("application/wasm",include_bytes!(
-                "../../target/www/web_bg.wasm"
-            ))),
-        )
+        picoserve::Router::new()
+            .route(
+                "/",
+                get_service(picoserve::response::File::html(include_str!(
+                    "../../target/www/index.html"
+                ))),
+            )
+            .route(
+                "/web.js",
+                get_service(picoserve::response::File::with_content_type(
+                    "text/javascript",
+                    include_bytes!("../../target/www/web.js"),
+                )),
+            )
+            .route(
+                "/web_bg.wasm",
+                get_service(picoserve::response::File::with_content_type(
+                    "application/wasm",
+                    include_bytes!("../../target/www/web_bg.wasm"),
+                )),
+            )
     }
 }
 #[embassy_executor::task(pool_size = WEB_TASK_POOL_SIZE)]
@@ -189,25 +190,4 @@ async fn web_task(
         &mut http_buffer,
     )
     .await
-}
-
-fn serve_frontend_asset(path: &str) -> &'static [u8] {
-    match path {
-        "index.html" => {
-            println!("index.html");
-            include_bytes!(r"..\..\target\www\index.html")
-        }
-        "web_bg.wasm" => {
-            println!("web_bg.wasm");
-            include_bytes!(r"..\..\target\www\web_bg.wasm")
-        }
-        "web.js" => {
-            println!("web.js");
-            include_bytes!(r"..\..\target\www\web.js")
-        }
-        _ => {
-            println!("ELSE");
-            include_bytes!(r"..\..\target\www\index.html")
-        }
-    }
 }
