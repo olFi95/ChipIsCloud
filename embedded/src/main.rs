@@ -3,11 +3,9 @@
 #![feature(impl_trait_in_assoc_type)]
 extern crate alloc;
 
-use alloc::boxed::Box;
 use defmt::*;
 use emballoc::Allocator;
 use embassy_executor::Spawner;
-use embassy_net::tcp::TcpSocket;
 use embassy_net::{Ipv4Address, Ipv4Cidr, StackResources};
 use embassy_stm32::eth::generic_smi::GenericSMI;
 use embassy_stm32::eth::{Ethernet, PacketQueue};
@@ -20,11 +18,14 @@ use embassy_stm32::rng::Rng;
 use embassy_stm32::time::Hertz;
 use embassy_stm32::{bind_interrupts, eth, peripherals, rng, Config};
 use embassy_time::Duration;
-use embedded_io_async::{Read, Write};
+use embedded_io_async::Read;
 use heapless::Vec;
 use log::{error, info};
-use picoserve::routing::get;
-use picoserve::{make_static, AppBuilder, AppRouter};
+use picoserve::extract::State;
+use picoserve::request::Request;
+use picoserve::response::{File, Response, ResponseWriter, StatusCode};
+use picoserve::routing::{get, get_service, RequestHandlerFunction};
+use picoserve::{make_static, AppBuilder, AppRouter, ResponseSent};
 use rand_core::RngCore;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
@@ -147,7 +148,22 @@ impl AppBuilder for AppProps {
     type PathRouter = impl picoserve::routing::PathRouter;
 
     fn build_app(self) -> picoserve::Router<Self::PathRouter> {
-        picoserve::Router::new().route("/", get(|| async move { "Hello World" }))
+        picoserve::Router::new().route(
+            "/",
+            get_service(picoserve::response::File::html(include_str!(
+                "../../target/www/index.html"
+            ))),
+        ).route(
+            "/web.js",
+            get_service(picoserve::response::File::with_content_type("text/javascript",include_bytes!(
+                "../../target/www/web.js"
+            ))),
+        ).route(
+            "/web_bg.wasm",
+            get_service(picoserve::response::File::with_content_type("application/wasm",include_bytes!(
+                "../../target/www/web_bg.wasm"
+            ))),
+        )
     }
 }
 #[embassy_executor::task(pool_size = WEB_TASK_POOL_SIZE)]
