@@ -1,8 +1,11 @@
 #![no_std]
 #![no_main]
 #![feature(impl_trait_in_assoc_type)]
-extern crate alloc;
 
+extern crate alloc;
+mod init;
+mod static_site_app;
+use crate::static_site_app::{static_site_task, StaticSiteProps};
 use defmt::*;
 use emballoc::Allocator;
 use embassy_executor::Spawner;
@@ -10,18 +13,12 @@ use embassy_net::{Ipv4Address, Ipv4Cidr, StackResources};
 use embassy_stm32::eth::generic_smi::GenericSMI;
 use embassy_stm32::eth::{Ethernet, PacketQueue};
 use embassy_stm32::peripherals::ETH;
-use embassy_stm32::rcc::{
-    AHBPrescaler, APBPrescaler, Hse, HseMode, Pll, PllDiv, PllMul, PllPreDiv, PllSource, Sysclk,
-    VoltageScale,
-};
 use embassy_stm32::rng::Rng;
-use embassy_stm32::time::Hertz;
-use embassy_stm32::{bind_interrupts, eth, peripherals, rng, Config};
+use embassy_stm32::{bind_interrupts, eth, peripherals, rng};
 use embassy_time::Duration;
 use heapless::Vec;
-use log::{error, info};
-use picoserve::routing::get_service;
-use picoserve::{make_static, AppBuilder, AppRouter};
+use log::error;
+use picoserve::make_static;
 use rand_core::RngCore;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
@@ -44,29 +41,10 @@ async fn net_task(mut runner: embassy_net::Runner<'static, Device>) -> ! {
 }
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    let mut config = Config::default();
-    config.rcc.hsi = None;
-    config.rcc.hsi48 = Some(Default::default()); // needed for RNG
-    config.rcc.hse = Some(Hse {
-        freq: Hertz(8_000_000),
-        mode: HseMode::BypassDigital,
-    });
-    config.rcc.pll1 = Some(Pll {
-        source: PllSource::HSE,
-        prediv: PllPreDiv::DIV2,
-        mul: PllMul::MUL125,
-        divp: Some(PllDiv::DIV2),
-        divq: Some(PllDiv::DIV2),
-        divr: None,
-    });
-    config.rcc.ahb_pre = AHBPrescaler::DIV1;
-    config.rcc.apb1_pre = APBPrescaler::DIV1;
-    config.rcc.apb2_pre = APBPrescaler::DIV1;
-    config.rcc.apb3_pre = APBPrescaler::DIV1;
-    config.rcc.sys = Sysclk::PLL1_P;
-    config.rcc.voltage_scale = VoltageScale::Scale0;
+    let  config = init::init();
+    println!("Clocks initialized!");
     let p = embassy_stm32::init(config);
-    info!("Hello World!");
+    println!("Peripherals initialized!");
 
     // Generate random seed.
     let mut rng = Rng::new(p.RNG, Irqs);
@@ -114,7 +92,6 @@ async fn main(spawner: Spawner) {
 
     println!("Network task initialized");
 
-    let app = make_static!(AppRouter<AppProps>, AppProps.build_app());
 
     let config = make_static!(
         picoserve::Config<Duration>,
@@ -128,7 +105,7 @@ async fn main(spawner: Spawner) {
 
     for id in 0..WEB_TASK_POOL_SIZE {
         println!("spawned web task {}", id);
-        spawner.must_spawn(web_task(id, stack, app, config));
+        spawner.must_spawn(static_site_task(id, stack, StaticSiteProps.get_static(), config));
     }
 }
 #[cortex_m_rt::exception]
@@ -137,61 +114,3 @@ unsafe fn HardFault(ef: &cortex_m_rt::ExceptionFrame) -> ! {
     loop {}
 }
 
-struct AppProps;
-
-impl AppBuilder for AppProps {
-    // type PathRouter = ();
-    type PathRouter = impl picoserve::routing::PathRouter;
-
-    fn build_app(self) -> picoserve::Router<Self::PathRouter> {
-        picoserve::Router::new()
-            .route(
-                "/",
-                get_service(picoserve::response::File::with_content_type_and_headers(
-                    "text/html",
-                    include_bytes!("../../target/www/index.html.gz"),
-                    &[("Content-Encoding", "gzip")],
-                )),
-            )
-            .route(
-                "/web.js",
-                get_service(picoserve::response::File::with_content_type_and_headers(
-                    "text/javascript",
-                    include_bytes!("../../target/www/web.js.gz"),
-                    &[("Content-Encoding", "gzip")],
-                )),
-            )
-            .route(
-                "/web_bg.wasm",
-                get_service(picoserve::response::File::with_content_type_and_headers(
-                    "application/wasm",
-                    include_bytes!("../../target/www/web_bg.wasm.gz"),
-                    &[("Content-Encoding", "gzip")],
-                )),
-            )
-    }
-}
-#[embassy_executor::task(pool_size = WEB_TASK_POOL_SIZE)]
-async fn web_task(
-    id: usize,
-    stack: embassy_net::Stack<'static>,
-    app: &'static AppRouter<AppProps>,
-    config: &'static picoserve::Config<Duration>,
-) -> ! {
-    let port = 80;
-    let mut tcp_rx_buffer = [0; 1024];
-    let mut tcp_tx_buffer = [0; 1024];
-    let mut http_buffer = [0; 2048];
-    println!("web_task {} started", id);
-    picoserve::listen_and_serve(
-        id,
-        app,
-        config,
-        stack,
-        port,
-        &mut tcp_rx_buffer,
-        &mut tcp_tx_buffer,
-        &mut http_buffer,
-    )
-    .await
-}
