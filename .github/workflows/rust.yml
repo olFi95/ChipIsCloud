@@ -10,13 +10,29 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-
+  build-web:
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v4
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
+    - name: Build Web
+      run: cd web && cargo build --verbose
+    - name: Test Web
+      run: cd web && cargo test --verbose
+
+  build-embedded:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build Embedded
+      run: cd embedded && cargo build --verbose
+    - name: Test Embedded
+      run: cd embedded && cargo test --verbose
+
+  build-backend:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build Backend
+      run: cd backend && cargo build --verbose
+    - name: Test Backend
+      run: cd backend && cargo test --verbose
