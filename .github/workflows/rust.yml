@@ -13,26 +13,32 @@ jobs:
   build-web:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - name: Build Web
-      run: cd web && cargo build --verbose
-    - name: Test Web
-      run: cd web && cargo test --verbose
-
+      - uses: actions/checkout@v4
+      - name: Install WebAssembly Target
+        run: rustup target add wasm32-unknown-unknown
+      - name: Build Web
+        run: cd web && cargo build --target wasm32-unknown-unknown --verbose
+      - name: Test Web
+        run: cd web && cargo test --verbose
   build-embedded:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - name: Build Embedded
-      run: cd embedded && cargo build --verbose
-    - name: Test Embedded
-      run: cd embedded && cargo test --verbose
-
+      - uses: actions/checkout@v4
+      - name: Install WebAssembly Target
+        run: rustup target add wasm32-unknown-unknown
+      - name: Install Embedded Target
+        run: rustup target add thumbv7em-none-eabihf
+      - name: Build Embedded
+        run: cd embedded && cargo build --verbose
+      - name: Test Embedded
+        run: cd embedded && cargo test --verbose
   build-backend:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - name: Build Backend
-      run: cd backend && cargo build --verbose
-    - name: Test Backend
-      run: cd backend && cargo test --verbose
+      - uses: actions/checkout@v4
+      - name: Install WebAssembly Target
+        run: rustup target add wasm32-unknown-unknown
+      - name: Build Backend
+        run: cd backend && cargo build --verbose
+      - name: Test Backend
+        run: cd backend && cargo test --verbose
